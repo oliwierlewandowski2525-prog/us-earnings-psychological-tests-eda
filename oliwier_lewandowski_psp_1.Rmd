@@ -1,0 +1,398 @@
+---
+title: "Wizualizacja danych i statystyki opisowe w eksploracji danych o testach psychologicznych i zarobkach"
+author: "Oliwier Lewandowski"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+
+lang: pl
+---
+
+```{r setup, include=FALSE}
+options(scipen = 999)
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+grades <- fread("grades.TXT")
+grades <- grades[,-1]
+incomes <- fread("income.dat")
+incomes <- incomes[,-1]
+setnames(incomes, new = c('Wiek', 'Wyksztalcenie', 'Plec', 'Zarobki', 'Sektor'))
+setnames(grades, new = c("SrOcen", "IQ", "Plec", "WyT"))
+incomes$Wyksztalcenie <- factor(incomes$Wyksztalcenie, 
+                                levels = 1:6, 
+                                labels = c("Podstawowe", "Niepełne średnie", "Średnie", 
+                                           "Niepełne wyższe", "Wyższe (licencjat)", "Wyższe (magisterium)"))
+
+incomes$Plec <- factor(incomes$Plec, levels = c(1, 2), labels = c("Mężczyzna", "Kobieta"))
+
+incomes$Sektor <- factor(incomes$Sektor, levels = c(5, 6, 7), labels = c("Prywatny", "Publiczny", "Samozatrudnienie"))
+```
+
+\newpage
+
+# **Wyniki i analiza testów psychologicznych przeprowadzonych w pewnej szkole w USA wśród uczniów klas siódmych**
+
+## Informacje o przeprowadzonym badaniu
+
+Pierwszy zestaw analizowanych danych zawiera wyniki testów IQ, testów psychologicznych oraz średnie ocen w przedziale 0-11 (w podziale na płeć) 78 uczniów klas siódmych pewnej szkoły w USA. Wykorzystany test psychologiczny *Piers-Harris Children's Self-Concept Scale (The Way I Feel About Myself)* składa się z serii 80 osobistych pytań dotyczących środowiska i samopoczucia ucznia. Badany odpowiada na nie "tak" lub "nie", a na podstawie tych odpowiedzi przydzielana jest punktacja - im wyższy wynik, tym lepsza samoocena i samopoczucie ucznia. Niniejsza praca skupi się na statystycznym i wizualnym opisie relacji pomiędzy wynikami tego testu a płcią, poziomem IQ oraz średnią ocen badanych dzieci.
+
+## Tabela podstawowych statystyk
+
+\small
+
+```{r}
+tab1 <- melt(grades[, .(ID = 1:.N, Plec, SrOcen, IQ, WyT)],
+     measure.vars = c("SrOcen", "IQ", "WyT"))[, .(Srednia = mean(value),
+                                                    Mediana = median(value),
+                                                    Q1 = quantile(value, 0.25),
+                                                    Q2 = quantile(value, 0.75),
+                                                    Min = min(value),
+                                                    Max = max(value),
+                                                    Wariancja = var(value),
+                                                    Odchylenie_standardowe = sd(value),
+                                                    Wspolczynnik_zmiennosci = sd(value)/(mean(value))),
+                                                    by = c("variable")]
+tab1$variable <- c("Śr. ocen", "IQ", "Wynik testu")
+
+knitr::kable(tab1, digits = 2, align = c('l','c','c','c','c','c','c','c','c','c'), caption = "Ogólne statystyki dla całej grupy", col.names = c("Zmienna", "Średnia", "Mediana", "Q1", "Q3", "Min.", "Max", "Wariancja", 
+                           "Odchylenie std.", "Współcz. zmienności"))
+```
+
+\normalsize
+
+**Wnioski z powyższej tabelki:**
+
+Najbardziej rzucającym się w oczy wnioskiem, jaki można wyciągnąć z powyższej tabeli, jest charakterystyka rozkładu Ilorazu Inteligencji wśród badanych. Wyniki te wykazują bardzo małe zróżnicowanie, na co wskazuje niski współczynnik zmienności. Ponadto, bardzo zbliżone do siebie wartości średniej i mediany sugerują, że rozkład IQ w tej grupie jest symetryczny - zdecydowana większość uczniów osiągnęła wyniki zbliżone do klasowej przeciętnej, a duże odchylenia od normy są rzadkie.
+
+Kolejną wartą uwagi zmienną jest średnia ocen. Wartości kwartyli (Q1 = 6.28, Q3 = 8.98) oraz stosunkowo wysoka mediana (7.83) pokazują, że wyniki większości uczniów skupiają się w górnej połowie skali punktowej. Zauważalna jest jednak różnica między średnią (7.45), która leży niżej niż mediana która jest najprawdopobniej uwarunkowa pewną ilością outlierów w dolnych wartościach. 
+
+Ostatecznym wnioskiem z tabeli jest zauważenie ogólnie relatywnie wysokiej samooceny uczniów - co najmniej 75% badanych uzyskało wynik 51/80 lub wyższy, a mediana wynosi niemalże 60 punktów. Na uwagę zasługuje również fakt, że średnia ponownie jest zauważalnie niższa od mediany. Sugeruje to, że w klasie znajduje się kilkoro uczniów o skrajnie niskiej samoocenie (minimum wynosi zaledwie 20/80), którzy zaniżają średnią na tle reszty grupy. Warty odnotowania jest również fakt, że pomimo niskiego rozrzutu w ilorazie inteligencji, rozrzut wyników samooceny jest zdecydowanie większy. Świadczy to o tym, że poziom inteligencji nie ma stuprocentowego wpływu na poczucie własnej wartości wśród tych uczniów.
+
+## Histogramy i Boxploty
+
+```{r, fig.width=10, fig.height=5}
+
+  h2 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "darkgray", binwidth = 8)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Rozkład wyników testu IQ",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  b2 <- ggplot(grades, aes(x = "Test IQ", y = IQ)) + 
+  geom_boxplot(fill = "lightgreen", color = "darkgreen", width = 0.5) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Boxplot wyników testu IQ", x = "", y = "Wynik testu IQ")
+
+   grid.arrange(h2, b2, ncol = 2)
+
+```
+
+Patrząc na wizualizację wyników testu IQ, świetnie widać to, o czym wspominałem przy okazji tabeli statystyk. Na histogramie zdecydowana większość uczniów ląduje w dość wąskim przedziale od 100 do 120 punktów, tworząc ładny szczyt. Ciekawostkę za to zdradza nam dopiero boxplot. Wyraźnie rzuca się na nim w oczy garstka outlierów w samych dolnych rejestrach - to zaledwie czworo uczniów z wynikami poniżej 80 punktów. Choć na histogramie nie rzuca się to tak w oczy, to właśnie ta nieliczna grupka sprawia, że wykres lekko rozciąga się w lewą stronę i to oni są bezpośrednio odpowiedzialni za to, że średnia całej klasy zjechała odrobinę poniżej mediany.
+
+```{r, fig.width=10, fig.height=5}
+
+  h1 <- ggplot(grades,aes(x = WyT)) + 
+  geom_histogram(fill = "darkblue", color = "white", binwidth = 6)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Rozkład wyników testu psychologicznego",  x = "Wyniki testu psychologicznego", y = "Liczba uczniów")
+
+  b1 <- ggplot(grades, aes(x = "Test psych.", y = WyT)) + 
+  geom_boxplot(fill = "lightblue", color = "darkblue", width = 0.5) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Boxplot w. testu psychologicznego", x = "", y = "Wynik testu psychologicznego")
+
+  grid.arrange(h1, b1, ncol = 2)
+```
+
+Jeśli chodzi o wyniki testu psychologicznego, wizualizacje idealnie potwierdzają nasze przypuszczenia wyciągnięte z tabeli statystyk. Na histogramie wyraźnie widać lewostronną asymetrię - najwyższe słupki grupują się po prawej stronie wykresu (w przedziale od 50 do 70 punktów), co obrazuje ogólnie dobrą samoocenę badanej większości. Z kolei spojrzenie na boxplot obok natychmiastowo wyjaśnia, dlaczego średnia dla całej klasy zjechała zauważalnie poniżej mediany. Na samym dole wykresu pudełkowego widnieją trzy wyraźne wartości odstające (kropki w okolicach 20-30 punktów). To właśnie ta niewielka grupa uczniów o niskiej samoocenie tworzy rozciągnięty, lewy ogon na histogramie i to oni bezpośrednio "ciągną" w dół średni wynik całej grupy.
+
+```{r, fig.width=10, fig.height=5}
+
+  h3 <- ggplot(grades,aes(x = SrOcen)) + 
+  geom_histogram(fill = "darkgreen", color = "darkgray", binwidth = 1)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Rozkład średniej ocen",  x = "Średnia ocen", y = "Liczba uczniów")
+
+  b3 <- ggplot(grades, aes(x = "Średnia ocen", y = SrOcen)) + 
+  geom_boxplot(fill = "lightgreen", color = "darkgreen", width = 0.5) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Boxplot średniej ocen", x = "", y = "Średnia ocen")
+
+  grid.arrange(h3, b3, ncol = 2)
+
+```
+
+Ostatni zestaw wykresów przedstawia średnią ocen i potwierdza przypuszczenia wysnute wcześniej z tabeli statystyk. Histogram pokazuje wyraźnie, że większość uczniów radzi sobie z nauką bardzo dobrze, przez co najwyższe słupki zbijają się w prawej części wykresu (w okolicach ocen 7-9). Z kolei spojrzenie na boxplot od razu pokazuje powód zaniżonej średniej klasy. Długi wąs i pojedyńcze outliery schodzące na sam dół wykresu (niemal do zera) pokazują nieliczną grupę uczniów z bardzo słabymi wynikami. To właśnie oni, mimo świetnych ocen większości klasy pociągają ogólną średnią w dół.
+
+## Statystki i wykresy z podziałem ze względu na płeć
+
+\small
+
+```{r, fig.width=10, fig.height=5}
+
+tab2 <- melt(grades[, .(ID = 1:.N, Plec, SrOcen, IQ, WyT)],
+     measure.vars = c("SrOcen", "IQ", "WyT"))[, .(Srednia = mean(value),
+                                                    Mediana = median(value),
+                                                    Q1 = quantile(value, 0.25),
+                                                    Q2 = quantile(value, 0.75),
+                                                    Min = min(value),
+                                                    Max = max(value),
+                                                    Wariancja = var(value),
+                                                    Odchylenie_standardowe = sd(value),
+                                                    Wspolczynnik_zmiennosci = sd(value)/(mean(value))),
+                                                    by = c("Plec","variable")]
+levels(tab2$variable) <- c("Śr. ocen", "IQ", "Wynik testu")
+
+  knitr::kable(tab2, digits = 2, align = c('c','l','c','c','c','c','c','c','c','c','c'), caption = "Ogólne statystyki dla całej grupy", col.names = c("Płeć", "Zmienna", "Średnia", "Mediana", "Q1", "Q3", "Min.", "Max", "Wariancja", 
+                           "Odchylenie std.", "Współcz. zmienności"))
+
+  h1 <- ggplot(grades, aes(x = WyT, fill = Plec)) + 
+  geom_histogram(color = "darkgray", binwidth = 7, position = "dodge") +
+  scale_fill_manual(values = c("M" = "#2c7fb8", "F" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke")) +
+  labs(title = "Rozkład wyników testu psychologicznego",  x = "Wyniki testu psychologicznego", y = "Liczba uczniów")
+
+  b1 <- ggplot(grades, aes(x = Plec, y = WyT, fill = Plec)) + 
+  geom_boxplot(color = "darkblue", width = 0.5) +
+  scale_fill_manual(values = c("M" = "#2c7fb8", "F" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"), legend.position = "none") +
+  labs(title = "Boxplot w. testu psychologicznego", x = "Płeć", y = "Wynik testu psychologicznego")
+
+  grid.arrange(h1, b1, ncol = 2)
+
+```
+
+Patrząc na samą tabelę, od razu rzuca się w oczy, że średnia i mediana wyników testu psychologicznego, podobnie jak reszta podstawowych statystyk, są dla obu płci bardzo do siebie zbliżone. Wykresy ujawniają jednak pewne interesujące różnice w strukturze tych ocen. Z jednej strony, na histogramie widać, że u chłopców częściej zdarzają się wyniki bliskie wartości maksymalnej (wyraźne niebieskie słupki w przedziale 60-70). Z drugiej strony, wyniki dziewcząt (mimo obecności kilku skrajnie niskich wartości odstających) są znacznie bardziej skupione wokół wartości przeciętnych dla tej grupy. Dobrze obrazuje to "ciaśniejsze" pudełko na wykresie po prawej stronie, oznaczające mniejszy rozstęp międzykwartylowy. Ostatecznie jednak te różnice w rozkładach równoważą się na tyle, że w ogólnym zestawieniu liczbowym statystyki dla obu płci mocno się ze sobą zlewają.
+
+```{r, fig.width=10, fig.height=5}
+
+
+  h2 <- ggplot(grades,aes(x = IQ, fill = Plec)) + 
+  geom_histogram(color = "darkgray", binwidth = 7, position = "dodge")+
+  scale_fill_manual(values = c("F" = "purple", "M" = "blue")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke")) +
+  labs(title = "Rozkład wyników testu IQ",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  b2 <- ggplot(grades, aes(x = Plec, y = IQ, fill = Plec)) + 
+  geom_boxplot(color = "darkblue", width = 0.5) +
+  scale_fill_manual(values = c("F" = "purple", "M" = "blue")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),panel.background = element_rect(fill = "whitesmoke"), legend.position = "none")+
+  labs(title = "Boxplot w. testu IQ", x = "", y = "Wynik testu IQ")
+
+  grid.arrange(h2, b2,ncol = 2)
+
+```
+
+W przypadku Ilorazu Inteligencji od razu widać w tabeli, że to chłopcy osiągają wyższe wyniki - wskazuje na to zarówno wyższa mediana, średnia, jak i wartości poszczególnych kwartyli. Ciekawą perspektywę dodaje jednak spojrzenie na histogram. Można na nim zauważyć, że w badanej grupie znacznie więcej dziewcząt plasuje się poniżej pułapu 100 punktów, który jest ogólnie uznawany za wartość przeciętną w populacji. Wyniki chłopców są z kolei wyraźnie przesunięte w kierunku wyższych wartości w skali. Co więcej, patrząc na statystyki, to paradoksalnie wyniki męskiej części klasy wykazują nieco mniejsze zróżnicowanie (niższe odchylenie standardowe), co oznacza, że chociaż chłopcy punktują wyżej, to jako podgrupa są w swoich wynikach odrobinę bardziej spójni niż dziewczęta.
+
+```{r, fig.width=10, fig.height=5}
+
+
+  h3 <- ggplot(grades,aes(x = SrOcen, fill = Plec)) + 
+  geom_histogram(color = "darkgray", binwidth = 1, position = "dodge")+
+  scale_fill_manual(values = c("M" = "#2c7fb8", "F" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "Rozkład średniej ocen",  x = "Średnia ocen", y = "Liczba uczniów")
+
+  b3 <- ggplot(grades, aes(x = Plec, y = SrOcen, fill = Plec)) + 
+  geom_boxplot(color = "darkblue", width = 0.5) +
+  scale_fill_manual(values = c("M" = "#2c7fb8", "F" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),panel.background = element_rect(fill = "whitesmoke"), legend.position = "none")+
+  labs(title = "Boxplot średniej ocen", x = "", y = "Średnia ocen")
+
+  grid.arrange(h3, b3, ncol = 2)
+
+```
+
+Na koniec zostawiłem najciekawszą porcję danych. W tabelce średniej ocen widzimy, że mediana oraz kwartyle (Q1 i Q3) są niemalże identyczne. Rzuca się jednak w oczy o połowę większy współczynnik zmienności u mężczyzn w stosunku do kobiet, jak i zauważalnie niższa średnia ich ocen - pomimo tego, że chłopcy uzyskali trochę wyższą medianę wyników. Na wykresach jednak zagadka się sama rozwiązuje. Na wykresie pudełkowym widzimy, że pomimo bycia mocno zbliżonymi, mają one jedną zasadniczą różnicę: outlierów wśród chłopców. To właśnie oni są winowajcami zaburzenia tych statystyk, co wraz z resztą słabszych ocen mocno wydłuża ten dolny ogon. Poza tym godnym uwagi na histogramie jest wystrzał średniej ocen u chłopców w przedziale 8-9. Ogólnie rzecz biorąc, poza tymi wartościami skrajnymi wykresy u dziewcząt i chłopców mocno się do siebie zbliżają, co sprawia głównie, że nasze mediany i kwartyle tak dobrze się ze sobą zlewają.
+
+\normalsize
+
+## Różne histogramy dla zmiennej ilościowej IQ dla pokazania różnic przy wyborze skalowania w celu odczytu danych z wykresu
+
+```{r, fig.width=10, fig.height=10}
+
+  h1 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "white", binwidth = 1)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "(1) Bardzo dużo klas",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  h2 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "white", binwidth = 4)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "(2) Dużo klas",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  h3 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "white", binwidth = 7)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "(3) Średnia ilość klas",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  h4 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "white", binwidth = 13)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "(4) Mała ilość klas",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  h5 <- ggplot(grades,aes(x = IQ)) + 
+  geom_histogram(fill = "darkgreen", color = "white", binwidth = 40)+
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"), panel.background = element_rect(fill = "whitesmoke"))+
+  labs(title = "(5) Bardzo mała ilość klas",  x = "Wyniki testu IQ", y = "Liczba uczniów")
+
+  grid.arrange(h1, h2, h3, h4, h5, ncol = 2)
+
+```
+
+Zdecydowałem się wybrać zmienną IQ, ponieważ jest to powszechnie znana skala, co sprawia, że różnice na wykresach będą dość intuicyjne do zrozumienia. Wybór najlepszej liczby słupków (czyli klas) zależy zazwyczaj od kontekstu, ale patrząc na to zestawienie od razu widać, że niektóre opcje sprawdzają się o wiele lepiej niż inne.
+
+Wykres nr (1) został podzielony na tak dużą liczbę wąskich "pudełek", że z grubsza sprowadza się do zwykłego zliczania pojedyńczych wyników przez co słabo nadaje się do przejrzystej wizualizacji.
+
+Z kolei wykresy (4) i (5) idą w drugą skrajność. Wykres nr (4) nadaje się co najwyżej do bardzo szybkiego rzutu okiem na dane, ale gubi już ważne detale. Natomiast histogram nr (5), który wrzuca wszystkich uczniów do zaledwie dwóch ogromnych bloków, z grubsza nie przekazuje nam już żadnych sensownych informacji o ich zawortościach.
+
+Histogramy (2) oraz (3) zachowują natomiast najbardziej sensowną liczbę klas. Widać na nich wyraźnie ogólny kształt i to, w jakich przedziałach skupia się najwięcej uczniów. W tym miejscu wybieram **Wykres numer (3)** jako najlepszy - przedziały mają w nim na tyle czytelną strukturę, że łatwo z niego odczytać najważniejsze tendencje, a bardziej szczegółowe informacje i tak lepiej typowo odczytywać z innych dostępnych narzędzi statystycznych.
+
+
+\newpage
+
+# **Dane o zarobkach w USA w roku 2000**
+
+## Informacje o przeprowadzonym badaniu 
+
+Drugi analizowany zbiór danych opiera się na informacjach zebranych w marcu 2000 roku przez amerykańskie *Bureau of Labor Statistics*. Pochodzą one z jednego z najważniejszych narodowych badań statystycznych w USA - *Current Population Survey*, a dokładniej z jego corocznego, marcowego wyniku.
+
+Badana próba obejmuje 55 899 ludzi reprezentujących amerykańskich pracowników. W niniejszej części raportu poddane analizie zostaną roczne zarobki (w USD) w kontekście takich czynników jak wiek, płeć, poziom wykształcenia (mierzony na sześciostopniowej skali od wykształcenia podstawowego po magisterium) oraz sektor zatrudnienia (prywatny, publiczny lub samozatrudnienie).
+
+Głównym celem poniższej analizy jest zidentyfikowanie podstawowych nierówności dochodowych, w tym zbadanie luki w płacach między płciami oraz oszacowanie wpływu wykształcenia na amerykańskim rynku pracy w danym roku.
+
+## Opis struktury zarobków w USA poprzez podstawowe statystki i wykresy
+
+\small
+
+```{r, fig.height = 6, fig.width = 10}
+tab1 <- melt(incomes, measure.vars = c("Zarobki"))[, .(Srednia = mean(value),
+                                                    Mediana = median(value),
+                                                    Q1 = quantile(value, 0.25),
+                                                    Q2 = quantile(value, 0.75),
+                                                    Min = min(value),
+                                                    Max = max(value),
+                                                    Wariancja = var(value),
+                                                    Odchylenie_standardowe = sd(value),
+                                                    Wspolczynnik_zmiennosci = sd(value)/(mean(value))),
+                                                    by = c("variable")]
+tab1$variable <- c("Zarobki")
+
+knitr::kable(tab1, digits = c(0,0,0,0,0,0,0,0,0,2), align = c('l','c','c','c','c','c','c','c','c'), caption = "Ogólne statystyki dla całej grupy", col.names = c("", "Średnia", "Mediana", "Q1", "Q3", "Min.", "Max", "Wariancja", "Odchylenie std.", "Współcz. zmienności"))
+                           
+
+przecietne <- median(incomes$Zarobki)
+srednia_gen <- mean(incomes$Zarobki)
+dominanta <- as.numeric(names(sort(table(incomes$Zarobki), decreasing = TRUE)[1]))
+q1 <- quantile(incomes$Zarobki, 0.25)
+q3 <- quantile(incomes$Zarobki, 0.75)
+
+ggplot(incomes, aes(x = Zarobki)) +
+  geom_density(fill = "gray90", color = "gray50", alpha = 0.5) +
+  geom_vline(aes(xintercept = srednia_gen, color = "Średnia"), linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = przecietne, color = "Mediana"), linetype = "solid", size = 1) +
+  geom_vline(aes(xintercept = dominanta, color = "Dominanta"), linetype = "dotted", size = 1) +
+  geom_vline(aes(xintercept = q1, color = "Q1"), linetype = "dotdash", size = 1) +
+  geom_vline(aes(xintercept = q3, color = "Q3"), linetype = "dotdash", size = 1) +
+  coord_cartesian(xlim = c(-5000, 150000)) +
+  scale_color_manual(name = "Miary", values = c("Średnia" = "red", "Mediana" = "blue", "Dominanta" = "darkgreen", "Q1" = "orange", "Q3" = "purple")) +
+  theme_minimal() +
+  labs(title = "Rozkład zarobków z zaznaczonymi miarami", x = "Roczne zarobki (USD)", y = "Gęstość")
+``` 
+\normalsize
+
+Patrząc na powyższe statystyki, od razu rzuca się w oczy, że średnia (około 38 tysięcy USD) jest znacznie wyższa niż mediana (29 717 USD). Mamy tu do czynienia z silną asymetrią prawostronną - w praktyce oznacza to, że znaczna część społeczeństwa zarabia poniżej średniej krajowej, a sam wynik jest mocno zawyżany przez garstkę osób o skrajnie wysokich dochodach. Potwierdza to też ogromny rozrzut danych; 75% badanych Amerykanów zarabia poniżej 46 504 USD rocznie, podczas gdy rekordzista w próbie wykręca aż 425 510 USD. Jeśli chodzi o ujemne zarobki, to nie jest to żaden błąd w danych. Wyjaśnienie jest proste i kryje się w sektorze samozatrudnienia - to jedyna grupa, która może po prostu zaliczyć stratę, jeśli koszty prowadzenia biznesu w danym roku przerosną przychody. Właśnie dlatego w statystykach ich dochód ląduje „pod kreską”.
+
+## Porównanie zarobków w zależności od wykształcenia
+
+```{r, fig.height=7.5, fig.width=7.5}
+
+ggplot(incomes, aes(x = Wyksztalcenie, y = Zarobki, fill = Wyksztalcenie)) +
+  geom_boxplot(color = "black", outlier.alpha = 0.2) +
+  scale_fill_brewer(palette = "Blues") +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),
+    panel.background = element_rect(fill = "whitesmoke"),
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")) +
+  labs(title = "Rozkład zarobków względem poziomu wykształcenia", x = "Poziom wykształcenia", y = "Zarobki (USD)")
+
+```
+
+Z wykresów pudełkowych jasno wynika, że wraz z wyższym poziomem wykształcenia rozkłady przesuwają się ku górze, co bezpośrednio dowodzi, że edukacja ma duży wpływ na przeciętne zarobki (medianę) w Stanach Zjednoczonych. Nie da się jednak ukryć, że niższe wykształcenie nie dyskwalifikuje z osiągania bardzo wysokich dochodów, o czym świadczy duża liczba wartości odstających (outlierów) w górnych rejestrach dla każdej z grup. Kolejną wartą uwagi kwestią jest rozkład zarobków ujemnych - co ciekawe, mimo że wyższe wykształcenie typowo wiąże się z wyższymi zarobkami, to właśnie w tych grupach można zaobserwować najwięcej przypadków strat finansowych (schodzących poniżej zera). Łączy się to bezpośrednio ze wspomnianym wcześniej samozatrudnieniem, na które częściej decydują się osoby z wyższym wykształceniem.
+
+
+## Porównanie zarobków ze względu na płeć
+
+```{r, fig.height=9.5, fig.width=8}
+ w1 <- ggplot(incomes, aes(x = Plec, y = Zarobki, fill = Plec)) +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "black") + 
+  geom_boxplot(width = 0.15, fill = "white", color = "black", outlier.alpha = 0.2) + 
+  scale_fill_manual(values = c("Mężczyzna" = "#2c7fb8", "Kobieta" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),
+    panel.background = element_rect(fill = "whitesmoke"),
+    legend.position = "none",
+    axis.text.x = element_text(face = "bold", size = 12), 
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)) +
+
+  labs(title = "Rozkład", x = "Płeć", y = "Roczne zarobki (USD)")
+  
+
+  w2 <- ggplot(incomes, aes(x = Zarobki, fill = Plec, color = Plec)) +
+  geom_density(alpha = 0.4, linewidth = 1) + 
+  scale_fill_manual(values = c("Mężczyzna" = "#2c7fb8", "Kobieta" = "#e6550d")) +
+  scale_color_manual(values = c("Mężczyzna" = "#2c7fb8", "Kobieta" = "#e6550d")) +
+  theme_bw() +
+  theme(plot.background = element_rect(fill = "whitesmoke"),
+    panel.background = element_rect(fill = "whitesmoke"),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14))+
+  
+  labs(title = "Boxplot", x = "Roczne zarobki (USD)", y = "Gęstość", fill = "Płeć:", color = "Płeć:")
+  
+  grid.arrange(w1, w2, ncol=1)
+
+  tab_plec <- incomes[, .(Srednia = mean(Zarobki), Mediana = as.numeric(median(Zarobki)), Q1 = quantile(Zarobki, 0.25), Q3 = quantile(Zarobki, 0.75), Min = min(Zarobki), Max = max(Zarobki),
+                         Odchylenie_standardowe = sd(Zarobki), Wspolczynnik_zmiennosci = sd(Zarobki) / mean(Zarobki)), by = Plec]
+  
+  knitr::kable(tab_plec, 
+             digits = c(0, 0, 0, 0, 0, 0, 0, 0, 2), 
+             align = c('l','c','c','c','c','c','c','c','c'),
+             col.names = c("Płeć", "Średnia", "Mediana", "Q1", "Q3", "Min.", "Max", "Odchylenie std.", "Współcz. zmienności"))
+
+```
+
+Z wykresów wyraźnie widać, że w badanej próbie mężczyźni zarabiali więcej od kobiet. Potwierdza to zarówno wyższa średnia, jak i mediana w ich grupie. Dodatkowo trzeci kwartyl dla mężczyzn jest zauważalnie przesunięty w prawo, co oznacza, że 25% najlepiej zarabiających mężczyzn osiąga o wiele wyższe kwoty niż najlepiej zarabiające kobiety.
+
+Patrząc na gęstość rozkładu, zarobki kobiet są dużo bardziej skupione wokół niższych wartości (węższy i wyższy wierzchołek) gdzie u mężczyzn wartości te rozkładają sie bardziej równomiernie po całym wykresie. Z kolei u mężczyzn na wykresie wiolonowym widać znacznie dłuższy ogon w górną strone, sięgający w kierunku bardzo wysokich dochodów. Warto również wspomnieć, że max u mężczyzn i kobiet jest bardzo zbliżony pomimo dużych różnic w pozostałych statystykach. 
+
+## Określenie "średnich" zarobków mieszkańca Stanów Zjednoczonych
+
+W przypadku analizowanego zbioru, najlepszą statystyką do określenia typowych zarobków jest **mediana**. Jak można zauważyć na wykresie **2.2**, średnia arytmetyczna leży zdecydowanie wyżej. Wynika to z obecności wartości odstających - osób zarabiających skrajnie wysokie kwoty, które silnie zawyżają średnią. Mediana niweluje ten problem, ponieważ wskazuje dochód osoby znajdującej się dokładnie w środku rozkładu (po uporządkowaniu danych od najmniejszych do największych). Dzięki temu znacznie lepiej obrazuje zarobki przeciętnego pracownika w Stanach Zjednoczonych. 
+
+Średnia ta [Mediana] w roku dwutysięcznym wynosi zatem 29717 USD rocznie 
+
+
